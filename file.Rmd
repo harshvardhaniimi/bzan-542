@@ -1,0 +1,108 @@
+---
+title: "Exploring R"
+author: "Harshvardhan"
+date: "2022-09-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This code is also available at harsh17.in/intro-to-r.
+
+# Load Datasets
+
+Command + Option + I to insert R code chunks.
+
+```{r}
+artists = readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-09-27/artists.csv')
+```
+
+To explore data frames, you can use `View()`.
+
+```{r}
+View(artists)
+```
+
+# Number of Artists by State
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+artists_total = artists |> 
+   group_by(state) |> 
+   summarise(Total_Artists = sum(artists_n, na.rm = T)) |> 
+   arrange(desc(Total_Artists))
+```
+
+```{r}
+artists |> 
+   filter(state == "California") |> 
+   group_by(race) |> 
+   summarise(Total_Artists = sum(artists_n, na.rm = T)) |> 
+   arrange(desc(Total_Artists))
+```
+
+# Number of Types
+
+```{r}
+unique(artists$type)
+```
+
+# Artists Share
+
+```{r}
+artists_LQ = artists |> 
+   group_by(state) |> 
+   summarise(Avg_LQ = mean(location_quotient, na.rm = T)) |> 
+   arrange(desc(Avg_LQ))
+```
+
+# Scatter Plot
+
+ggplot2 provides many functions which can be used for making scatter plots.
+
+```{r}
+artists_total
+artists_LQ
+```
+
+```{r}
+df1 = inner_join(artists_total, artists_LQ)
+```
+
+```{r}
+df1 |> 
+   ggplot(aes(x = Total_Artists, y = Avg_LQ)) +
+   geom_point()
+```
+
+```{r}
+df1 |> 
+   ggplot(aes(x = Total_Artists, y = Avg_LQ, colour = state)) +
+   geom_point() +
+   theme(legend.position = "none")
+```
+
+## to change ggplot2 theme
+
+<https://r-charts.com/ggplot2/themes/>
+
+```{r}
+theme_set(ggthemes::theme_clean())
+```
+
+```{r}
+p  = df1 |> 
+   ggplot(aes(x = Total_Artists, y = Avg_LQ, colour = state)) +
+   geom_point() +
+   theme(legend.position = "none")
+p
+```
+
+```{r}
+plotly::ggplotly()
+```
