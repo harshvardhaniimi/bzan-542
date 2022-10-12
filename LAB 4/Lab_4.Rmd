@@ -1,0 +1,268 @@
+---
+title: "Lab 4"
+output: word_document
+---
+
+```{r}
+library(tidyverse)
+library(caret)
+#set.seed(1) # if fixed randomization is desired
+```
+
+# Example: Flight Delays
+
+```{r}
+## reading the data
+data <- read.csv("FlightDelays.csv")
+head(data)
+```
+
+```{r}
+str(data)
+```
+
+```{r}
+x <- data[,c('schedtime','carrier','dest','origin','weather','dayweek')]
+x$schedtime <- factor(floor(x$schedtime/100))
+x$weather <- factor(x$weather)
+x$dayweek <- factor(x$dayweek)
+head(x)
+```
+
+```{r}
+y <- data$delay
+y.table <- table(y)
+y.table
+barplot(y.table)
+```
+
+**Warning!!!**
+
+The `ontime` class is significantly larger than the `delayed` class. If we simply `classify` all flights as `ontime`, the accuracy would be 1773/2201 = 0.8055! Does it still make sense to continue? Anyway, let's try if some models can perform better.
+
+```{r}
+# please use features (x) and classes (y) directly for nb (method)
+train(x, y, method='nb', 
+      tuneGrid = data.frame(usekernel = FALSE, fL = 0, adjust = 1),
+      trControl = trainControl(method = "cv", number = 10)
+)
+```
+
+```{r}
+# training and testing data sets
+nTotal=nrow(x)
+nTrain=floor(nTotal*(0.9))
+
+train=sample(nTotal, nTrain)
+
+x.train = x[train,]
+y.train = y[train]
+x.test = x[-train,]
+y.test = y[-train]
+```
+
+### Evaluation Metrics
+
+-   **Accuracy** is the percentage of correctly classifies instances out of all instances. [Learn more.](https://www.wikiwand.com/en/Accuracy_and_precision)
+
+-   **Kappa** or Cohen\'s Kappa is like classification accuracy, except that it is normalized at the baseline of random chance on your dataset. It is a more useful measure to use on problems that have an imbalance in the classes.
+
+```{r}
+fit <- train(x.train, y.train, method='nb', 
+      tuneGrid = data.frame(usekernel = FALSE, fL = 0, adjust = 1),
+      trControl = trainControl(method = "cv", number = 10)
+)
+fit
+```
+
+### Prediction Accuracy
+
+```{r}
+y.pred=predict(fit, newdata=x.test)
+table(y.test, y.pred) # confusion matrix
+sum(y.test==y.pred)/length(y.test) # prediction accuracy
+```
+
+### Apriori Probabilities
+
+```{r}
+fit$finalModel$apriori
+```
+
+```{r}
+fit$finalModel$tables
+```
+
+# Example: Zoo
+
+```{r}
+data(Zoo, package="mlbench")
+head(Zoo)
+```
+
+```{r}
+summary(Zoo)
+```
+
+# Example: SVM
+
+```{r}
+svmFit <- train(type ~., data = Zoo, method = "svmLinear",
+    trControl = trainControl(method = "cv", number = 10)
+)
+svmFit
+```
+
+## The final model
+
+```{r}
+svmFinal <- svmFit$finalModel
+svmFinal
+```
+
+## The support vectors
+
+```{r}
+svmFinal@nSV
+```
+
+```{r}
+svmFinal@alphaindex
+```
+
+```{r}
+svmIndex <- unique(unlist(svmFinal@alphaindex))
+svmIndex
+```
+
+```{r}
+Zoo[svmIndex, ] |> View()
+```
+
+## The confusion matrix
+
+Note that usually we want to apply the model on new testing data, not on the same training data!
+
+```{r}
+# test with train data, which is not convincing, so can you try cross-validation?
+pred <- predict(svmFit, newdata = Zoo)
+table(Zoo$type, pred) # confusion matrix
+sum(Zoo$type==pred)/nrow(Zoo) # prediction accuracy
+```
+
+# Example: Non-linear SVM
+
+```{r}
+n <- 100
+nld <- matrix(0, 2*n, 3, dimnames = list(NULL, c('x1', 'x2', 'y')))
+head(nld)
+```
+
+```{r}
+theta <- runif(n, 0, 2*pi)
+one <- rnorm(n, 1, 0.1)
+two <- rnorm(n, 2, 0.1)
+nld[1:100, 1] <- one*cos(theta)
+nld[1:100, 2] <- one*sin(theta)
+nld[1:100, 3] <- 1
+nld[101:200, 1] <- two*cos(theta)
+nld[101:200, 2] <- two*sin(theta)
+nld[101:200, 3] <- 2
+plot(nld[,1:2], col=nld[,3])
+```
+
+```{r}
+nld <- as.data.frame(nld)
+nld$y <- as.factor(nld$y)
+head(nld)
+```
+
+### Confusion Matrix with Linear SVM
+
+```{r}
+model = train(y~x1+x2, data=nld, method = "svmLinear")
+table(nld$y, predict(model))
+```
+
+### Confusion Matrix with Radial SVM (Gaussian)
+
+```{r}
+model = train(y~x1+x2, data=nld, method = "svmRadial")
+table(nld$y, predict(model))
+```
+
+```{r}
+grid = expand.grid(x1=seq(-2,2,0.1), x2=seq(-2,2,0.1))
+pred = predict(model, grid)
+```
+
+#### Decision function
+
+```{r}
+plot(nld[,1:2], col=nld[,3])
+angles = c(0, 90)
+for (n in 1:nrow(grid)) {
+  x1=grid[n,1]
+  x2=grid[n,2]  
+  rect(x1-0.05, x2-0.05, x1+0.05, x2+0.05,
+       col=pred[n], border = "transparent", density=10, angle=angles[pred[n]])
+}
+```
+
+# Random Forest
+
+```{r}
+1-(0.2)^2
+```
+
+```{r}
+set.seed(542)
+rfFit <- train(type ~ ., data = Zoo, method = "rf",
+    trControl = trainControl(method = "cv", number = 10),
+    tuneGrid = expand.grid(
+        mtry = 1:10
+    )
+)
+rfFit
+```
+
+# Gradient Boosted Decision Trees (xgboost)
+
+```{r}
+xgbFit <- train(type ~ ., data = Zoo, method = "xgbTree",
+    trControl = trainControl(method = "cv", number = 10),
+    tuneGrid = expand.grid(
+        nrounds = 20,
+        max_depth = 3,
+        colsample_bytree = .6,
+        eta = 0.1,
+        gamma=0,
+        min_child_weight = 1,
+        subsample = .5
+    )
+)
+xgbFit
+```
+
+# Artificial Neural Network
+
+```{r}
+nnetFit <- train(type ~ ., data = Zoo, method = "nnet",
+    trControl = trainControl(method = "cv", number = 10),
+    tuneLength = 5,
+    trace = FALSE)
+nnetFit
+```
+
+# Package: randomForest
+
+```{r}
+library(randomForest)
+rf <- randomForest(iris[,-5], iris[,5], prox=TRUE)
+rf.p <- classCenter(iris[,-5], iris[,5], rf$prox)
+plot(iris[,3], iris[,4], pch=21, xlab=names(iris)[3], ylab=names(iris)[4],
+     bg=c("red", "blue", "green")[as.numeric(factor(iris$Species))],
+     main="Iris Data with Prototypes")
+points(rf.p[,3], rf.p[,4], pch=21, cex=2, bg=c("red", "blue", "green"))
+print(rf)
+```
