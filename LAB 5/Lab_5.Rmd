@@ -1,0 +1,441 @@
+---
+title: Lab 5
+output: word_document
+---
+
+BZAN 542
+
+Charles Liu
+
+# Packages
+
+```{r}
+library(dplyr) #https://dplyr.tidyverse.org/
+library(tidyr) #https://tidyr.tidyverse.org/
+library(stringr) #https://stringr.tidyverse.org/
+library(GGally)
+library(caret)
+library(pROC)
+library(rpart.plot)
+
+#Please try:
+# https://cran.r-project.org/web/packages/dplyr/vignettes/dplyr.html
+# https://cran.r-project.org/web/packages/tidyr/vignettes/tidy-data.html
+```
+
+# Data Processing
+
+Please learn more information about the data: <https://www.lendingclub.com/info/download-data.action>
+
+```{r}
+df = read.csv("/Users/harshvardhan/Dropbox/Fall 2022/BZAN 542/bzan-542/LAB 5/LoanStats3a.csv", skip=1)
+dim(df)
+```
+
+A comprehensive summary:
+
+```{r}
+summary(df)
+```
+
+## Classification of loan status
+
+```{r}
+table(df$loan_status)
+```
+
+We will focus on the two major classes.
+
+Note that, you may want to keep more than two class for your data, and many algorithms can naturally handle more than two classes.
+
+```{r}
+library(tidylog)
+df = df %>%
+    filter(loan_status %in% c('Charged Off', 'Fully Paid')) %>%
+    droplevels()
+table(df$loan_status)
+```
+
+Let's aim to detect loan status being charged off. Obviously, the two classes are imbalanced.
+
+## What are the features?
+
+The features should be selected according to your domain knowledge. One important issue is that we cannot use information that is collected later than the collection of classes, because using that information is impossible in reality even if such information is included in the data.
+
+```{r}
+df.model = df %>%
+    select(term, grade, emp_length, home_ownership, annual_inc,
+           purpose, pymnt_plan, out_prncp_inv, delinq_2yrs,
+           int_rate, revol_util, pub_rec_bankruptcies,
+           loan_status)
+dim(df.model)
+```
+
+## Do we have any format issues?
+
+**According to the summary, there are columns containing '%', so let's check more details:**
+
+-   find all columns where we can detect '%'
+-   then count their frequencies
+
+```{r}
+df.model %>%
+    summarise_if( ~any(str_detect(., '%')), ~sum(str_detect(., '%')) )
+```
+
+The details show that the column int_rate has '%' in all records, but the column revol_util is very strange: the frequency is 50 less! what do we have when we cannot detect '%'? It turns out that we have '', which can be deemed missing values:
+
+```{r}
+df.model %>%
+    filter(!str_detect(revol_util, '%')) %>%
+    group_by(revol_util) %>%
+    summarise(n())
+```
+
+Now we can convert character percentages to numeric variables:
+
+```{r}
+df.model = df.model %>%
+    mutate(
+        int_rate = as.numeric(str_replace(int_rate, "%" , ""))
+        ,
+        revol_util = as.numeric(str_replace(revol_util, "%" , ""))
+    )
+```
+
+Summary of converted numeric variables. Note that there are 50 NA's in column revol_util.
+
+```{r}
+df.model %>% select(int_rate, revol_util) %>% summary
+```
+
+**Another column we may want to convert to numeric is emp_length:**
+
+The following line is very similar with the `table` function
+
+```{r}
+df.model %>% group_by(emp_length) %>% summarise(n())
+```
+
+We will convert 10+ to be 10.5 and \<1 to be 0.5. You can also try other choices based on your understanding and performance comparison. In addition, we will convert 'n/a' to be NA.
+
+```{r}
+df.model = df.model %>%
+    mutate(
+        emp_length = case_when( # first find the numeric part
+            emp_length=='10+ years' ~ '10.5'
+            ,
+            emp_length=='< 1 year' ~ '0.5'
+            ,
+            emp_length=='n/a' ~ ''
+            ,
+            TRUE ~ substr(emp_length, 1, 1)
+        )
+        ,
+        emp_length = as.numeric(emp_length) # then convert to numeric column
+    )
+class(df.model$emp_length)
+table(df.model$emp_length)
+summary(df.model$emp_length)
+```
+
+## Do we have any character columns?
+
+If so, we can convert character columns to factor columns.
+
+```{r}
+sapply(df.model, class)
+```
+
+```{r}
+df.model = df.model %>%
+    mutate_if(is.character, as.factor)
+sapply(df.model, class)
+```
+
+## Do we have any ordered factors?
+
+The column grade should be ordered:
+
+```{r}
+class(df.model$grade)
+table(df.model$grade)
+```
+
+```{r}
+df.model = df.model %>%
+    mutate(
+        grade=ordered(grade)
+    )
+class(df.model$grade)
+table(df.model$grade)
+```
+
+## Do we have any empty or constant columns?
+
+```{r}
+col_distincts = summarise_all(df.model, ~n_distinct(., na.rm = T))
+col_distincts
+```
+
+```{r}
+col_distincts[, col_distincts <= 1]
+```
+
+We do!
+
+-   If the number is 0, the column has only missing values. We don't have such columns;
+-   If the number is 1, the column has only one value, such as `pymnt_plan`;
+
+Let's drop such columns:
+
+```{r}
+df.model=df.model[, col_distincts > 1 ]
+dim(df.model)
+```
+
+## Do we have factor columns having too many levels?
+
+```{r}
+col_levels = summarise_all(df.model, ~is.factor(.)*n_distinct(., na.rm = T))
+col_levels
+```
+
+Note that: \* If the number is zero, the column is not factor; \* If the number is positive, it is the number of factor levels;
+
+Therefore: \* we have 6 numeric columns; \* we have two columns having two levels, three columns having 5, 7, and 14 levels, respectively;
+
+Let's check the levels of the column `purpose`:
+
+```{r}
+df.model %>% group_by(purpose) %>% summarise(n())
+```
+
+Since the levels seem reasonable, we will keep them. Otherwise, you may want to simplify complicated levels, e.g., combining similar levels or just dropping columns with little useful information.
+
+## Do we have any missing values?
+
+```{r}
+col_nas = summarise_all( df.model, ~mean(is.na(.)) )
+col_nas
+```
+
+We have missing values in several columns. Since the missing fraction is low, we can continue to fix them. Otherwise, if the missing fraction of a column is very high, we may have to drop the column.
+
+Let's `fix` the missing values: \* replace missing values in emp_length and revol_util with mean of the available values. \* replace missing values in pub_rec_bankruptcies with zero, since that might mean there is no public records of bankruptcies.
+
+```{r}
+df.model %>%
+    select_if(~any(is.na(.))) %>%
+    summary()
+```
+
+```{r}
+df.model = df.model %>%
+    replace_na(list(
+        emp_length=mean(df.model$emp_length, na.rm = TRUE)
+        ,
+        revol_util=mean(df.model$revol_util, na.rm = TRUE)
+        ,
+        pub_rec_bankruptcies=0 
+    ))
+```
+
+```{r}
+df.model %>%
+    select(emp_length, revol_util, pub_rec_bankruptcies) %>%
+    summary()
+```
+
+# Visualization
+
+```{r}
+df.model %>%
+    select_if(is.numeric) %>%
+    sample_n(1000) %>% # for efficiency let's visualize 1000 random sample
+    ggpairs()
+```
+
+```{r}
+theme_set(ggthemes::theme_calc())
+df.model %>%
+    select_if(is.factor) %>%
+    sample_n(1000) %>% # for efficiency let's visualize 1000 random sample
+    ggpairs()
+```
+
+In practice, you will spend a lot of time to understand the visualizations. For instance: \* For numeric columns, if the distribution is skewed, please consider log transformation. \* For factor columns, if the distribution is not well balanced, please consider dropping rare factor levels. \* For column pairs, if the scatter plot is strongly correlated, please consider if we want to include both columns.
+
+**Warning: we have some of these issues in the visualization**, but for the sake of time, I am going to assume everything is alright, and continue the modeling work. If you address some of these issues, you have a good chance to improve the modeling performances.
+
+# Cross Validation
+
+We prefer to use valid variable names for the class levels:
+
+```{r}
+levels(df.model$loan_status) =  make.names(levels(df.model$loan_status))
+table(df.model$loan_status)
+```
+
+We will split the data into two parts: \* `df.cv`: to be used for cross validation, e.g., to identify best algorithms and tune parameters. \* `df.holdout`: to be used only for evaluating the final models from cross validation. The holdout set should never be used during the cross validation process, e.g., selecting algorithms or tuning parameters.
+
+Since our data is relative large, we will use 50% for cross validation and 50% for holdout. We will use the function `createDataPartition` which creates stratified partitions by class levels in its argument `y`.
+
+100/900
+
+5/95
+
+0/100
+
+100/0
+
+10/90
+
+```{r}
+ind = createDataPartition(y=df.model$loan_status, p=0.5, list=FALSE)
+df.cv = df.model[ind, ]
+df.holdout = df.model[-ind, ]
+```
+
+Let's check the balances of class levels:
+
+```{r}
+table(df.cv$loan_status)
+table(df.holdout$loan_status)
+```
+
+A helper function to check the model results and performances on holdoud data:
+
+```{r}
+summary.holdout = function(fit, data=df.holdout){
+    ret = list()
+    fit.prob = predict(fit, newdata=data, type='prob')
+    fit.pred = max.col(fit.prob)
+    fit.pred = colnames(fit.prob)[fit.pred]
+    fit.pred = factor(fit.pred, levels = levels(data$loan_status))
+    ret$cm = confusionMatrix(fit.pred, data$loan_status)
+    ret$roc = roc(data$loan_status=='Charged.Off', fit.prob$Charged.Off)
+    
+    #return(ret)
+    ret
+}
+```
+
+Let's try decision tree model with cross validation.
+
+Remember: \* Since the classes are not well balanced, we will use `ROC` instead of accuracy. \* For imbalanced classes, we may have addition evaluation requirements.
+
+```{r}
+ctrl = trainControl(method = "cv", number = 5, classProbs = TRUE, summaryFunction = twoClassSummary, verboseIter = TRUE)
+
+method = "rpart"
+method.plot = rpart.plot
+tuneGrid = expand.grid(cp = 10^seq(from = -2, to = 0, by = 0.5))
+
+fit.cv = train(loan_status ~ .,
+        data = df.cv,
+        method = method,
+        tuneGrid = tuneGrid,
+        metric = "ROC",
+        trControl = ctrl)
+
+fit.cv
+
+# results
+fit.cv$results
+fit.cv$bestTune
+# summary
+sum.cv=summary.holdout(fit.cv)
+sum.cv
+# plot
+plot(fit.cv)
+method.plot(fit.cv$finalModel)
+plot(varImp(fit.cv))
+plot(sum.cv$roc)
+```
+
+# How about downSample or upSample?
+
+A disparity in the frequencies of the observed classes can have a significant negative impact on model fitting. One technique for resolving such a class imbalance is to subsample the training data in a manner that mitigates the issues.
+
+```{r}
+df.down = downSample(x=select(df.cv,-loan_status), y=df.cv$loan_status, yname = 'loan_status')
+dim(df.down)
+table(df.down$loan_status)
+
+fit.down = train(loan_status ~ .,
+        data = df.down,
+        method = method,
+        tuneGrid = tuneGrid,
+        metric = "ROC",
+        trControl = ctrl)
+
+fit.down
+
+# results
+fit.down$results
+fit.down$bestTune
+# summary
+sum.down=summary.holdout(fit.down)
+sum.down
+# plot
+plot(fit.down)
+method.plot(fit.down$finalModel)
+plot(varImp(fit.down))
+plot(sum.down$roc)
+```
+
+```{r}
+df.up = upSample(x=select(df.cv,-loan_status), y=df.cv$loan_status, yname = 'loan_status')
+dim(df.up)
+table(df.up$loan_status)
+
+fit.up = train(loan_status ~ .,
+        data = df.up,
+        method = "rpart",
+        tuneGrid = tuneGrid,
+        metric = "ROC",
+        trControl = ctrl)
+
+fit.up
+
+# results
+fit.up$results
+fit.up$bestTune
+# summary
+sum.up=summary.holdout(fit.up)
+sum.up
+# plot
+plot(fit.up)
+rpart.plot(fit.up$finalModel)
+plot(varImp(fit.up))
+plot(sum.up$roc)
+```
+
+# How about other models or additional data?
+
+Please continue to try your own ideas ...
+
+```{r}
+nnetGrid <- expand.grid(size=3:7, decay=0.01)
+NNET <- train(loan_status~.,
+              data=df.down,
+              method="nnet",
+              tuneGrid=nnetGrid,
+              metric='ROC',
+              trace=FALSE,
+              #linout=TRUE,
+              trControl=ctrl)
+```
+
+```{r}
+# results
+NNET$results
+NNET$bestTune
+# summary
+sum.nn=summary.holdout(NNET)
+sum.nn
+# plot
+plot(NNET)
+plot(sum.nn$roc)
+```

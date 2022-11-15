@@ -65,7 +65,7 @@ y.test = y[-train]
 
 -   **Accuracy** is the percentage of correctly classifies instances out of all instances. [Learn more.](https://www.wikiwand.com/en/Accuracy_and_precision)
 
--   **Kappa** or Cohen\'s Kappa is like classification accuracy, except that it is normalized at the baseline of random chance on your dataset. It is a more useful measure to use on problems that have an imbalance in the classes.
+-   **Kappa** or Cohen's Kappa is like classification accuracy, except that it is normalized at the baseline of random chance on your dataset. It is a more useful measure to use on problems that have an imbalance in the classes.
 
 ```{r}
 fit <- train(x.train, y.train, method='nb', 
