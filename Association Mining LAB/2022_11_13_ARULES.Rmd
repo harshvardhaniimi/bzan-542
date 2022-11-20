@@ -10,16 +10,14 @@ output: rmdformats::robobook
 
 In this lab, I will use the (anonymised) data from a project that I worked on in 2019.
 
-Chai Kaapi is an Indian food and beverages chain with about 19 outlets in 5 cities. Their outlets are popular "hangout" places for young and old alike. People often go to their stores for meeting their friends, family or just getting their Chai-tea or coffee. Imagine a cafe, basically.
+CK is an Indian food and beverages chain with about 19 outlets in 5 cities. Their outlets are popular "hangout" places for young and old alike. People often go to their stores for meeting their friends, family or just getting their Chai-tea or coffee. Imagine a cafe, basically.
 
 Their prices are not low for Indian standards but they aren't a luxurious store either. They offer about 100 items at their store, though only about 20 generate most revenue.
-
-[![](images/Screen%20Recording%202022-11-14%20at%207.01.11%20PM.gif)](https://www.thechaikaapi.com/)
 
 Their two most popular items are the Chai (tea) and Coffee (which they like to call Kaapi). Chai can be of several types, depending on the spice in it. It could have ginger (Adrak) and be called Adrak Chai for example. In the table below, I'm providing some popular food items and their pictures/ details.
 
 | Item                                                         | Description                                                                             | Picture                                     |
-|-------------------|------------------------|------------------------------|
+|------------------|------------------------|------------------------------|
 | Adrak Chai / Kadak Chai / Elaichi Chai / Other types of Chai | Chai-tea with Ginger / Chai-tea with strong spices / Chai-tea with Cardamom / etc.      | ![](images/paste-D072628C.png){width="70%"} |
 | Kulhad Chai                                                  | Chai-tea served in earthen pot. Popular in Northern India, especially New Delhi         | ![](images/paste-490124D6.png)              |
 | Indian Filter Kaapi                                          | Filter Coffee, popular in Southern India                                                | ![](images/paste-39211D42.png){width="70%"} |
@@ -217,7 +215,7 @@ inspect(head(rules))
 quality(head(rules))
 ```
 
-### Rules with largest lift
+### Rules with highest lift
 
 ```{r}
 rules = sort(rules, by = "lift")
