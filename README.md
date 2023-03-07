@@ -16,6 +16,8 @@ This repository contains files related to BZAN 542: Data Mining Methods for Busi
 
 - [Using Github with RStudio](https://www.harsh17.in/using-github-with-rstudio/)
 
+- [Up and Running with R Markdown](https://www.harsh17.in/up-and-running-with-r-markdown/)
+
 ### Lab Files
 
 Lab files are also present in this repository.
